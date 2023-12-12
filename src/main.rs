@@ -1,12 +1,4 @@
-extern crate core;
-
-//use core::slice::SlicePattern;
-//use block_macro::Block;
-use std::fmt::Display;
-
-const ROUND_C: [u8; 10] = [
-    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36
-];
+use itertools::iproduct;
 
 const AES_SBOX: [u8; 256] = [
     //0     1    2      3     4    5     6     7      8    9     A      B    C     D     E     F
@@ -27,147 +19,212 @@ const AES_SBOX: [u8; 256] = [
     0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf, //E
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 ]; //F
 
-fn substitute_byte(byte: u8) -> u8 {
-    AES_SBOX[byte as usize]
-}
+#[derive(Debug)]
+pub struct State([[u8; 4]; 4]);
 
-fn rotate(word : &[u8;4]) -> [u8;4]{
-    //word.iter().cycle().skip(1).take(4).cloned().collect::<Vec<u8>>()
-    //word.iter().enumerate().map(|(index , w)| word[index + 1 % 4]).take(4).collect()
-    let mut rotate_w : [u8;4] = [0x00;4];//word.iter().enumerate().map(|(index , w)| word[index + 1 % 4]).take(4).collect();
-    for i in 0..4{
-        rotate_w[i] = word[(i+1 )% 4];
+impl State {
+    pub fn new() -> State{
+        State([[0x00; 4]; 4])
     }
-    return rotate_w;
-}
-
-fn print_byte(my_vec :&Vec<u8>){
-    for i in my_vec{
-        print!("{:02x}", i);
+    pub fn get(&self, row: usize, col: usize) -> u8 {
+        //self.0.get(row).and_then(|r| r.get(col))
+        self.0[row][col]
     }
-}
 
-/*fn left_shift( k : &[u8;16]) -> [u8;16]{
-    let mut k_shift : [u8;16] = [0x00;16];
-    for i in 0..4{
-        for j in 0..4{
-            k_shift[4 * i + j] = k[((4* i) + ((j +1) % 4)) as usize];
+    pub fn sub_bytes(&self) -> State{
+        let mut sub_state = State::new();
+        for (i, j) in iproduct!(0..4, 0..4) {
+            //println!("i: {}, j: {}", i, j);
+           // println!("{}",self.get(i,j) as usize);
+            sub_state.0[i][j] = AES_SBOX[self.get(i,j) as usize];
+        }
+        return sub_state;
+    }
+    pub fn print(&self){
+        for row in self.0.iter() {
+            for &byte in row.iter() {
+                print!("{:02x} ", byte);
+            }
+            println!();
         }
     }
-    return  k_shift;
+    pub fn shift_rows(&mut self) {
+        // Row 1: Shift left by 1 position
+        self.0[1].rotate_left(1);
+
+        // Row 2: Shift left by 2 positions
+        self.0[2].rotate_left(2);
+
+        // Row 3: Shift left by 3 positions
+        self.0[3].rotate_left(3);
+    }
+
+}
+
+fn shift_rows(state: &mut [[u8; 4]; 4]) {
+    // Row 1: Shift left by 1 position
+    state[1].rotate_left(1);
+
+    // Row 2: Shift left by 2 positions
+    state[2].rotate_left(2);
+
+    // Row 3: Shift left by 3 positions
+    state[3].rotate_left(3);
+}
+
+/*
+fn main() {
+    let mut state: State([
+        [0x00, 0x11, 0x22, 0x33],
+        [0x44, 0x55, 0x66, 0x77],
+        [0x88, 0x99, 0xaa, 0xbb],
+        [0xcc, 0xdd, 0xee, 0xff],
+    ]);
+
+    println!("Before ShiftRows:");
+    print_state(&state);
+
+    shift_rows(&mut state);
+
+    println!("After ShiftRows:");
+    print_state(&state);
 }
 
  */
 
-fn g_function(word: &[u8; 4], round_number: usize) -> [u8; 4] {
-
-    let results = word
-        .iter()
-        .enumerate()
-        .map(|(index, _)| AES_SBOX[word[(index + 1) % 4] as usize]);
-
-    // create an array to place our results
-    let mut g_word: [u8; 4] = Default::default();
-
-    // enumerate over each result and populate the array
-    for (i, result) in results.enumerate() {
-        g_word[i] = result;
-    }
-   // println!("1.g_word =  {:?}", g_word);
-    g_word[0] ^= &ROUND_C[round_number];
-   // println!("2. g_word =  {:?}", g_word);
-    return g_word;
-
-}
-fn xor (a : &[u8;4] , b :&[u8;4])-> [u8;4]{
-    //let a_xor_b = a.iter().zip(b.iter()).map(||(x, y)| x ^ y);
-    let mut a_xor_b : [u8; 4] = Default::default();
-    for i in 0..4{
-        a_xor_b[i] = a[i] ^ b[i];
-    }
-    return a_xor_b;
-}
-fn left_shift(k: &[u8; 16]) -> [u8; 16] {
-    let mut k_shift: [u8; 16] = [0x00; 16];
-    for (index, chunk) in k.chunks_exact(4).into_iter().enumerate() {
-        let i = 4 * index;
-        k_shift[i..i+4].copy_from_slice(& chunk.iter().cycle().skip(1).take(4).cloned().collect::<Vec<u8>>());
-    }
-    k_shift
-}
-fn key_expansion( key_init : &[u8;16], round_num: usize) -> [[u8; 4];4]{
-    let words = split_words(key_init);
-    let mut new_word: [[u8; 4];4] = Default::default();
-    new_word [0] = xor(&words[0], &g_function(&words[3], round_num));
-    new_word [1] = xor(&words[1] , &new_word[0]);
-    new_word [2] = xor(&words[2] , &new_word[1]);
-    new_word [3] = xor(&words[3] , &new_word[2]);
-    return new_word;
-}
-
-fn split_words(word_16 : &[u8;16]) -> [[u8;4];4]{
-    let result = word_16.chunks_exact(4);
-    let mut word: [[u8; 4];4] = Default::default();
-    for (i, result) in result.enumerate() {
-        let word_temp:Result<[u8;4],_> = result.try_into();
-        word[i] = match word_temp{
-            Ok(array) => array,
-            Err(_) => [0x0;4],
-        };
-    }
-    return word;
-}
-fn njm_main(){
-    let mut key_shift: [u8;16] = [0x00;16];
-    let key_init : [u8;4] = [0x00, 0x01, 0x02, 0x03];
-    let g_test = g_function(&key_init, 0);
-    //let g_test_2 = g_function_j(&key_init, 0);
-    println!("g_test{:?}", g_test);
-    //println!("g_test{:?}", g_test_2);
-    print_byte(&g_test.to_vec());
-    //print_byte(&g_test_2.to_vec());
-
-
-}
-fn aes_test(){
-    let key_test= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 215, 169, 117, 250, 210, 175, 114, 242, 219, 165, 121, 254, 214, 171, 118, 41, 127, 222, 140, 251, 208, 172, 126, 32, 117, 213, 128, 246, 222, 163, 169, 137, 0, 47, 82, 89, 172, 81, 114, 44, 121, 209, 132, 242, 218, 120, 13, 242, 165, 69, 234, 69, 135, 130, 119, 93, 200, 175, 223, 199, 58, 102, 141, 98, 127, 140, 200, 229, 253, 191, 149, 45, 82, 36, 82, 23, 52, 169, 48, 104, 184, 97, 213, 149, 67, 244, 248, 199, 103, 122, 111, 255, 60, 233, 104, 116, 186, 244, 49, 32, 133, 187, 189, 86, 255, 213, 66, 106, 22, 189, 54, 208, 226, 140, 22, 85, 89, 49, 64, 3, 1, 36, 185, 98, 106, 175, 125, 70, 196, 35, 107, 19, 157, 18, 43, 35, 143, 89, 189, 5, 32, 36, 251, 193, 3, 79, 232, 92, 17, 100, 203, 211, 72, 217, 206, 243, 108, 34, 15, 240, 35, 202, 83, 225, 0];
-    let key_round_1 = [214, 106, 170, 167, 116, 79, 253, 221, 210, 42, 175, 247, 114, 47, 250];
-}
-//    let key_test_hex :[u8]
-fn g_func_test(){
-    let key_init : [u8;16] = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
-    let mut word :[[u8;4];44] = [[0;4];44];//= Default::default();
-    word[0..4].copy_from_slice(&split_words(&key_init));
-    //println!("extended_key : {:?}", word);
-    //let mut round_iteration = 0;
-
-    //let mut word = split_words(&key_init);
-    //println!("word : {:?}", word);
-
-    for i in 0..10{
-        word[4 * i + 4 ] = xor(&g_function(&word[4 * i + 3],i), &word[4 * i] );
-        word[4 * i + 5] = xor(&word[4 * i + 4], &word[4 * i + 1] );
-        word[4 * i + 6] = xor(&word[4 * i + 5], &word[4 * i + 2] );
-        word[4 * i + 7] = xor(&word[4 * i + 6], &word[4 * i + 3] );
-       // println!("word : {:?}", word);
-        //round_iteration += 1;
-
-    }
-    println!("extended_key : {:?}", word);
-    let mut index = 1 ;
-    for i in word{
-        print_byte(&i.to_vec());
-        match index % 8 {
-            0 => println!("  "),
-            4 => println!("  "),
-            _ => (),
+fn print_state(state: &[[u8; 4]; 4]) {
+    for row in state.iter() {
+        for &byte in row.iter() {
+            print!("{:02x} ", byte);
         }
-        index += 1;
+        println!();
     }
 }
+
+
+// MixColumns operation
+fn mix_columns(state: &mut State) {
+    for i in 0..4 {
+        let a0 = state.0[0][i];
+        let a1 = state.0[1][i];
+        let a2 = state.0[2][i];
+        let a3 = state.0[3][i];
+
+        state.0[0][i] = multiplication_gf(0x02, a0) ^ multiplication_gf(0x03, a1) ^ a2 ^ a3;
+        state.0[1][i] = a0 ^ multiplication_gf(0x02, a1) ^ multiplication_gf(0x03, a2) ^ a3;
+        state.0[2][i] = a0 ^ a1 ^ multiplication_gf(0x02, a2) ^ multiplication_gf(0x03, a3);
+        state.0[3][i] = multiplication_gf(0x03, a0) ^ a1 ^ a2 ^ multiplication_gf(0x02, a3);
+    }
+}
+
+pub fn add_round_key(state :&mut State, round_key: &[[u8; 4]; 4]) {
+    for i in 0..4 {
+        for j in 0..4 {
+            state.0[i][j] ^= round_key[i][j];
+        }
+    }
+}
+
+
+/*fn mix_columns(state: &mut State) {
+    let mut tmp = [0; 4];
+
+    for i in 0..4 {
+        tmp[0] = gf_mult(state.0[i], 0x02) ^ gf_mult(state[4 + i], 0x03) ^ state[8 + i] ^ state[12 + i];
+        tmp[1] = state[i] ^ gf_mult(state[4 + i], 0x02) ^ gf_mult(state[8 + i], 0x03) ^ state[12 + i];
+        tmp[2] = state[i] ^ state[4 + i] ^ gf_mult(state[8 + i], 0x02) ^ gf_mult(state[12 + i], 0x03);
+        tmp[3] = gf_mult(state[i], 0x03) ^ state[4 + i] ^ state[8 + i] ^ gf_mult(state[12 + i], 0x02);
+
+        for j in 0..4 {
+            state[i + 4 * j] = tmp[j];
+        }
+    }
+}
+
+ */
+fn multiplication_gf(mut a: u8, mut b: u8) -> u8 {
+    let mut result: u8 = 0;
+    let mut hi_bits: u8;
+    let mut i = 0;
+    while i < 8 {
+        if (b & 1) == 1 {
+            result ^= a;
+        }
+        hi_bits = a & 0x80;
+        a <<= 1;
+        if hi_bits == 0x80 {
+            a ^= 0x1b;
+        }
+        b >>= 1;
+        i += 1;
+    }
+    return result;
+}
+
+/*fn main() {
+    // Example state matrix
+    let mut state: State = State {
+        bytes: [
+            0x32, 0x88, 0x31, 0xe0,
+            0x43, 0x5a, 0x31, 0x37,
+            0xf6, 0x30, 0x98, 0x07,
+            0xa8, 0x8d, 0xa2, 0x34,
+        ],
+    };
+
+    // Print the original state
+    println!("Original State:");
+    print_state(&state);
+
+    // Apply MixColumns operation
+    mix_columns(&mut state);
+
+    // Print the state after MixColumns
+    println!("\nAfter MixColumns:");
+    print_state(&state);
+}
+
+
+
+ */
 
 fn main() {
-    let key_init : [u8;16] = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
-    g_func_test();
+    let mut state = State([
+        [0x00, 0x11, 0x22, 0x33],
+        [0x44, 0x55, 0x66, 0x77],
+        [0x88, 0x99, 0xAA, 0xBB],
+        [0xCC, 0xDD, 0xEE, 0xFF],
+    ]);
+   // state.print();
+
+    // Print the original state
+    println!("Original State:");
+    state.print();
+
+    // Apply MixColumns operation
+    mix_columns(&mut state);
+
+    // Print the state after MixColumns
+    println!("\nAfter MixColumns:");
+    state.print();
+
+/*
+    let a = state.get(0,1);
+   // println!("{:0X}", a);
+
+   // println!("{:?}", state);
+    let new_stat= state.sub_bytes();
+    println!("{:?}", new_stat);
+    new_stat.print();
+
+    println!("shift ");
+
+    state.shift_rows();
+    state.print();
+
+ */
 }
+
+
+
 
