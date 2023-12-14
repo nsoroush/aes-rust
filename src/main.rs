@@ -1,3 +1,9 @@
+mod key_expansion;
+use key_expansion::*;
+
+use hex::FromHex;
+
+
 use itertools::iproduct;
 
 const AES_SBOX: [u8; 256] = [
@@ -26,30 +32,84 @@ impl State {
     pub fn new() -> State{
         State([[0x00; 4]; 4])
     }
+    pub fn from(input: [u8; 16]) -> State {
+        let mut state = State([[0; 4]; 4]);
+
+       // println!(" the state");
+
+        for i in 0..4 {
+            for j in 0..4 {
+                state.0[i][j] = input[i * 4 + j];
+               // print!("{:0x} ", state.0[i][j]);
+            }
+            //println!(" ");
+        }
+
+
+        state
+    }
+
     pub fn get(&self, row: usize, col: usize) -> u8 {
         //self.0.get(row).and_then(|r| r.get(col))
         self.0[row][col]
     }
 
-    pub fn sub_bytes(&self) -> State{
+    pub fn sub_bytes(&mut self) {
+
         let mut sub_state = State::new();
         for (i, j) in iproduct!(0..4, 0..4) {
             //println!("i: {}, j: {}", i, j);
            // println!("{}",self.get(i,j) as usize);
-            sub_state.0[i][j] = AES_SBOX[self.get(i,j) as usize];
+            self.0[i][j] = AES_SBOX[self.get(i,j) as usize];
         }
-        return sub_state;
+        //return sub_state;
     }
-    pub fn print(&self){
+    pub fn print(&self, name : &str){
+        println!("\n{}: ", name);
         for row in self.0.iter() {
             for &byte in row.iter() {
                 print!("{:02x} ", byte);
             }
-            println!();
+
         }
+        print!("\n");
     }
-    pub fn shift_rows(&mut self) {
+     fn shift_rows(&mut self) {
+
+         let mut b = self.0[0][1];
+         self.0[0][1] = self.0[1][1];
+         self.0[1][1] = self.0[2][1];
+         self.0[2][1] = self.0[3][1];
+         self.0[3][1] = b;
+
+         b = self.0[0][2];
+         let d = self.0[1][2];
+         self.0[0][2] = self.0[2][2];
+         self.0[1][2] = self.0[3][2];
+         self.0[3][2] = d;
+         self.0[2][2] = b;
+
+         b = self.0[0][3];
+         self.0[0][3] = self.0[3][3];
+         self.0[3][3] = self.0[2][3];
+         self.0[2][3] = self.0[1][3];
+         self.0[1][3] = b;
+
+/*
+
+         let mut j = 0;
+         for i in 1..4 {
+             let b = self.0[0][i];
+             self.0[0][i] = self.0[(1 + j) % 3 as usize][i];
+             self.0[1][i] = self.0[(2 + j) % 3 as usize][i];
+             self.0[2][i] = self.0[(3 + j) % 3 as usize][i];
+             self.0[3][i] = b;
+             println!("         i = {i}, {:0x}",b);
+             j += 1;}
+
+             /*
         // Row 1: Shift left by 1 position
+
         self.0[1].rotate_left(1);
 
         // Row 2: Shift left by 2 positions
@@ -57,20 +117,57 @@ impl State {
 
         // Row 3: Shift left by 3 positions
         self.0[3].rotate_left(3);
+
+         */
+
+ */
+
+     }
+    fn mix_columns(&mut self) {
+        for i in 0..4 {
+            /*let a0 = self.0[0][i];
+            let a1 = self.0[1][i];
+            let a2 = self.0[2][i];
+            let a3 = self.0[3][i];
+
+             */
+
+            let a0 = self.0[i][0];
+            let a1 = self.0[i][1];
+            let a2 = self.0[i][2];
+            let a3 = self.0[i][3];
+
+            self.0[i][0] = multiplication_gf(0x02, a0) ^ multiplication_gf(0x03, a1) ^ a2 ^ a3;
+            self.0[i][1] = a0 ^ multiplication_gf(0x02, a1) ^ multiplication_gf(0x03, a2) ^ a3;
+            self.0[i][2]= a0 ^ a1 ^ multiplication_gf(0x02, a2) ^ multiplication_gf(0x03, a3);
+            self.0[i][3] = multiplication_gf(0x03, a0) ^ a1 ^ a2 ^ multiplication_gf(0x02, a3);
+        }
+    }
+    pub fn to_hex_string(&self) -> String {
+        let mut hex_string = String::new();
+
+        for row in &self.0 {
+            for &byte in row {
+                hex_string.push_str(&format!("{:02X} ", byte));
+            }
+        }
+
+        hex_string.trim().to_string()
     }
 
 }
 
-fn shift_rows(state: &mut [[u8; 4]; 4]) {
+/*
     // Row 1: Shift left by 1 position
-    state[1].rotate_left(1);
+    state.0[1].rotate_left(1);
 
     // Row 2: Shift left by 2 positions
-    state[2].rotate_left(2);
+    state.0[2].rotate_left(2);
 
     // Row 3: Shift left by 3 positions
-    state[3].rotate_left(3);
-}
+    state.0[3].rotate_left(3);
+
+ */
 
 /*
 fn main() {
@@ -92,7 +189,8 @@ fn main() {
 
  */
 
-fn print_state(state: &[[u8; 4]; 4]) {
+fn print_state(state: &[[u8; 4]; 4], name: &str) {
+    println!("{}",name);
     for row in state.iter() {
         for &byte in row.iter() {
             print!("{:02x} ", byte);
@@ -117,10 +215,13 @@ fn mix_columns(state: &mut State) {
     }
 }
 
-pub fn add_round_key(state :&mut State, round_key: &[[u8; 4]; 4]) {
+pub fn add_round_key(state :&mut State, round_key: &[u8; 16]) {
+    //println!("1. here!");
+
+    //println!("2. here!");
     for i in 0..4 {
         for j in 0..4 {
-            state.0[i][j] ^= round_key[i][j];
+            state.0[i][j] ^= round_key[4 * i + j];
         }
     }
 }
@@ -161,68 +262,155 @@ fn multiplication_gf(mut a: u8, mut b: u8) -> u8 {
     return result;
 }
 
-/*fn main() {
-    // Example state matrix
-    let mut state: State = State {
-        bytes: [
-            0x32, 0x88, 0x31, 0xe0,
-            0x43, 0x5a, 0x31, 0x37,
-            0xf6, 0x30, 0x98, 0x07,
-            0xa8, 0x8d, 0xa2, 0x34,
-        ],
-    };
+fn state_to_str(state : &State) -> String{
+    let mut state_str =String::new();
+    for i in 0..4 {
+        for j in 0..4 {
+            state_str.push_str(format!("{:02x}", state.0[i][j]).as_str());
 
-    // Print the original state
-    println!("Original State:");
-    print_state(&state);
+        }
+    }
+    return state_str;
+}
+fn main(){
+    let expected_round_0_input = "00102030405060708090a0b0c0d0e0f0";
+    let after_S_Box = "63cab7040953d051cd60e0e7ba70e18c";
+    let after_permutation = "6353e08c0960e104cd70b751bacad0e7";
+    let after_mult = "5f72641557f5bc92f7be3b291db9f91a";
 
-    // Apply MixColumns operation
-    mix_columns(&mut state);
+    let initial_key = [ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
+    let expanded_key = key_expansion(&initial_key);
+    let mut plaintext = State::from([
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE,
+        0xFF,
+    ]);
+    println!("plaintext {:?}", plaintext);
+    println!("state_to_str {}",state_to_str(&plaintext));
+    // 1 . adding the round_key _0 // TEst is ok
+    plaintext.print("initial state");
+    add_round_key(&mut plaintext, &initial_key);
+    plaintext.print(" After adding round key");
 
-    // Print the state after MixColumns
-    println!("\nAfter MixColumns:");
-    print_state(&state);
+
+    let expected_round_o_byte_vec = str_to_u8(&expected_round_0_input);
+    vec_print(&expected_round_o_byte_vec.to_vec());
+    //63 ca b7 04 53 d0 51 09 e0 e7 cd 60 8c ba 70 e1
+    //63 53 e0 8c 09 60 e1 04 cd 70 b7 51 ba ca d0 e7
+
+    for round in 0..1{
+        println!(" {round}");
+        plaintext.sub_bytes();
+        plaintext.print(" After subbyte");
+        str_print(&after_S_Box);
+        plaintext.shift_rows();
+        plaintext.print(" After shift ");
+        str_print(&after_permutation);
+        println!(" ");
+
+        plaintext.mix_columns();
+        plaintext.print(" mine: After mix column");
+        str_print(&after_mult);
+        //add_round_key(&mut plaintext, &expanded_key[round]);
+        //plaintext.print(" mine: After round key");
+    }
+
+
+
+
+    /*
+    let a : [u8;16] = [ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
+    let b: [u8;16] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+    let c =  a.iter().enumerate().map(|(i , x)| x ^ &b[i]  ).collect::<Vec<u8>>();
+    println!("{:?}", c);
+    state.sub_bytes();
+    println!("after sbox {:?}", state);
+    state.shift_rows();
+    println!("after permutation {:?}", state);
+    test();
+
+    /*for round in 0..9{
+        state.sub_bytes();
+
+    }
+
+     */
+
+
+    /*
+        for round in 1..10 {
+            // SubBytes
+            sub_bytes(state);
+
+            // ShiftRows
+            shift_rows(state);
+
+            // MixColumns
+            mix_columns(state);
+
+            // AddRoundKey
+            add_round_key(state, &key[round * 16..(round + 1) * 16]);
+        }
+
+        // Final Round: SubBytes, ShiftRows, AddRoundKey
+        sub_bytes(state);
+        shift_rows(state);
+        add_round_key(state, &key[160..176]);
+
+     */
+
+     */
 }
 
+fn test(){
+    // CONST
+    let expanded_key_expected = "000102030405060708090a0b0c0d0e0fd6aa74fdd2af72fadaa678f1d6ab76feb692cf0b643dbdf1be9bc5006830b3feb6ff744ed2c2c9bf6c590cbf0469bf4147f7f7bc95353e03f96c32bcfd058dfd3caaa3e8a99f9deb50f3af57adf622aa5e390f7df7a69296a7553dc10aa31f6b14f9701ae35fe28c440adf4d4ea9c02647438735a41c65b9e016baf4aebf7ad2549932d1f08557681093ed9cbe2c974e13111d7fe3944a17f307a78b4d2b30c5";
+    let key_expanded : [u8;176 ] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 214, 170, 116, 253, 210, 175, 114, 250, 218, 166, 120, 241, 214, 171, 118, 254, 182, 146, 207, 11, 100, 61, 189, 241, 190, 155, 197, 0, 104, 48, 179, 254, 182, 255, 116, 78, 210, 194, 201, 191, 108, 89, 12, 191, 4, 105, 191, 65, 71, 247, 247, 188, 149, 53, 62, 3, 249, 108, 50, 188, 253, 5, 141, 253, 60, 170, 163, 232, 169, 159, 157, 235, 80, 243, 175, 87, 173, 246, 34, 170, 94, 57, 15, 125, 247, 166, 146, 150, 167, 85, 61, 193, 10, 163, 31, 107, 20, 249, 112, 26, 227, 95, 226, 140, 68, 10, 223, 77, 78, 169, 192, 38, 71, 67, 135, 53, 164, 28, 101, 185, 224, 22, 186, 244, 174, 191, 122, 210, 84, 153, 50, 209, 240, 133, 87, 104, 16, 147, 237, 156, 190, 44, 151, 78, 19, 17, 29, 127, 227, 148, 74, 23, 243, 7, 167, 139, 77, 43, 48, 197];
+    let round_0_input = "00102030405060708090a0b0c0d0e0f0";
+    let round_o_byte_vec = str_to_u8(&round_0_input);
 
+    let plaintext : &str = "00112233445566778899aabbccddeeff";
+    let initial_key_str = "000102030405060708090a0b0c0d0e0f";
+    let initial_key = str_to_u8(&initial_key_str);
+    //println!("initial_key {:?}", initial_key);
+    let k = Vec::from_hex(expanded_key_expected).expect("invalid");
+    println!("expanded_key_expected");
+    println!("{:?}", k);
+    // key is Correct !
+    let expanded_key = key_expansion(&initial_key);
+    println!("my key");
+    println!("expanded_key{:?}", expanded_key);
+    let mut my_key_str : String = Default::default();
+    for i in expanded_key.iter(){
+        for ch in i.iter(){
+            my_key_str.push_str(&format!("{0:x}", ch));
+        }
+    }
+    //println!("my_key_str {} \n, len {}", my_key_str, my_key_str.len());
+    //println!("   key_str {} \n, len {}", expanded_key_expected, expanded_key_expected.len());
 
- */
+}
+fn str_to_u8(hex_str: &str) -> [u8;16]{
+    let bytes_vec = Vec::from_hex(hex_str).expect("Invalid hex string");
+    let mut bytes_array = [0; 16];
+    bytes_array.copy_from_slice(&bytes_vec);
+    return  bytes_array;
 
-fn main() {
-    let mut state = State([
-        [0x00, 0x11, 0x22, 0x33],
-        [0x44, 0x55, 0x66, 0x77],
-        [0x88, 0x99, 0xAA, 0xBB],
-        [0xCC, 0xDD, 0xEE, 0xFF],
-    ]);
-   // state.print();
+}
+fn vec_print(my_vec : &Vec<u8>) {
+    for i in my_vec{
+        print!("{:02x} ", i);
+    }
+}
 
-    // Print the original state
-    println!("Original State:");
-    state.print();
-
-    // Apply MixColumns operation
-    mix_columns(&mut state);
-
-    // Print the state after MixColumns
-    println!("\nAfter MixColumns:");
-    state.print();
-
-/*
-    let a = state.get(0,1);
-   // println!("{:0X}", a);
-
-   // println!("{:?}", state);
-    let new_stat= state.sub_bytes();
-    println!("{:?}", new_stat);
-    new_stat.print();
-
-    println!("shift ");
-
-    state.shift_rows();
-    state.print();
-
- */
+fn str_print(my_str : &str){
+    let mut j = 0;
+    for i in my_str.chars(){
+        print!("{i}");
+        if j % 2 ==1 {
+            print!(" ");
+        }
+        j += 1;
+    }
 }
 
 

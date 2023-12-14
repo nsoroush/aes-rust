@@ -23,11 +23,11 @@ const AES_SBOX: [u8; 256] = [
     0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf, //E
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 ]; //F
 
-fn substitute_byte(byte: u8) -> u8 {
+pub fn substitute_byte(byte: u8) -> u8 {
     AES_SBOX[byte as usize]
 }
 
-fn rotate(word : &[u8;4]) -> [u8;4]{
+pub fn rotate(word : &[u8;4]) -> [u8;4]{
     //word.iter().cycle().skip(1).take(4).cloned().collect::<Vec<u8>>()
     //word.iter().enumerate().map(|(index , w)| word[index + 1 % 4]).take(4).collect()
     let mut rotate_w : [u8;4] = [0x00;4];//word.iter().enumerate().map(|(index , w)| word[index + 1 % 4]).take(4).collect();
@@ -37,13 +37,13 @@ fn rotate(word : &[u8;4]) -> [u8;4]{
     return rotate_w;
 }
 
-fn print_byte(my_vec :&Vec<u8>){
+pub fn print_byte(my_vec :&Vec<u8>){
     for i in my_vec{
         print!("{:02x}", i);
     }
 }
 
-fn g_function(word: &[u8; 4], round_number: usize) -> [u8; 4] {
+pub fn g_function(word: &[u8; 4], round_number: usize) -> [u8; 4] {
 
     let results = word
         .iter()
@@ -63,7 +63,7 @@ fn g_function(word: &[u8; 4], round_number: usize) -> [u8; 4] {
     return g_word;
 
 }
-fn xor (a : &[u8;4] , b :&[u8;4])-> [u8;4]{
+pub fn xor (a : &[u8;4] , b :&[u8;4])-> [u8;4]{
     //let a_xor_b = a.iter().zip(b.iter()).map(||(x, y)| x ^ y);
     let mut a_xor_b : [u8; 4] = Default::default();
     for i in 0..4{
@@ -71,7 +71,7 @@ fn xor (a : &[u8;4] , b :&[u8;4])-> [u8;4]{
     }
     return a_xor_b;
 }
-fn left_shift(k: &[u8; 16]) -> [u8; 16] {
+pub fn left_shift(k: &[u8; 16]) -> [u8; 16] {
     let mut k_shift: [u8; 16] = [0x00; 16];
     for (index, chunk) in k.chunks_exact(4).into_iter().enumerate() {
         let i = 4 * index;
@@ -79,7 +79,7 @@ fn left_shift(k: &[u8; 16]) -> [u8; 16] {
     }
     k_shift
 }
-fn split_words(word_16 : &[u8;16]) -> [[u8;4];4]{
+pub fn split_words(word_16 : &[u8;16]) -> [[u8;4];4]{
     let result = word_16.chunks_exact(4);
     let mut word: [[u8; 4];4] = Default::default();
     for (i, result) in result.enumerate() {
@@ -92,7 +92,7 @@ fn split_words(word_16 : &[u8;16]) -> [[u8;4];4]{
     return word;
 }
 
-fn key_expansion( key_init : &[u8;16])  -> [[u8;4];44]{
+pub fn key_expansion( key_init : &[u8;16])  -> [[u8;16];11]{
     let mut word :[[u8;4];44] = [[0;4];44];
     word[0..4].copy_from_slice(&split_words(key_init));
     for i in 0..10{
@@ -104,10 +104,27 @@ fn key_expansion( key_init : &[u8;16])  -> [[u8;4];44]{
         //round_iteration += 1;
 
     }
-    return  word;
-}
+    let mut key  : [[u8;16];11] = [[0x00;16];11];
+    print!("here");
+    println!("{:?}", key);
 
-fn main() {
+
+    for z in 0..11{
+        for i in 0..4{
+            for j in 0..4{
+                key[z][4 * i + j] = word[4 * z + i as usize][j];
+               // println!("i :{i} j = {j} z = {z} , { }",4 * i +j);
+            }
+        }
+    }
+        // println!("{:?}", word);
+    //println!("{:?}", key);
+
+    return  key;
+
+}
+/*
+pub fn main() {
     let key_init : [u8;16] = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
     let key = key_expansion(&key_init);
     println!("extended_key : {:?}", key);
@@ -124,8 +141,10 @@ fn main() {
 
 }
 
+ */
+
 #[test]
-fn key_expansion_test(){
+pub fn key_expansion_test(){
 
     let key_expected = ["000102030405060708090a0b0c0d0e0f"
         , "d6aa74fdd2af72fadaa678f1d6ab76fe"
